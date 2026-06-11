@@ -5,9 +5,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
+const SALT_ROUNDS = 10;
 
 @Injectable()
 export class UserService {
@@ -25,8 +28,28 @@ export class UserService {
       throw new ConflictException('User with this email already exists');
     }
 
-    const user = this.userRepository.create(createUserDto);
-    return this.userRepository.save(user);
+    const hashedPassword = await bcrypt.hash(
+      createUserDto.password,
+      SALT_ROUNDS,
+    );
+    const user = this.userRepository.create({
+      ...createUserDto,
+      password: hashedPassword,
+    });
+    const saved = await this.userRepository.save(user);
+    delete (saved as Partial<User>).password;
+    return saved;
+  }
+
+  /**
+   * Finds a user by email including the password column (which is
+   * excluded by default) so the auth layer can verify credentials.
+   */
+  async findByEmailWithPassword(email: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { email },
+      select: ['id', 'firstName', 'lastName', 'email', 'password', 'isActive'],
+    });
   }
 
   async findAll(): Promise<User[]> {
